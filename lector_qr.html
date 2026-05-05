@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lector QR</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0d;
+      --surface: #161616;
+      --surface2: #1f1f1f;
+      --border: rgba(255,255,255,0.08);
+      --border2: rgba(255,255,255,0.14);
+      --text: #f0f0f0;
+      --text2: #888;
+      --text3: #555;
+      --green: #00e676;
+      --green-dim: rgba(0,230,118,0.12);
+      --green-border: rgba(0,230,118,0.3);
+      --orange: #ff6b35;
+      --orange-dim: rgba(255,107,53,0.12);
+      --red: #ff4444;
+      --mono: 'DM Mono', monospace;
+      --sans: 'DM Sans', sans-serif;
+      --radius: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .logo {
+      width: 36px; height: 36px;
+      background: var(--green);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo svg { width: 20px; height: 20px; }
+    h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+    .tagline { font-size: 13px; color: var(--text2); margin-top: 2px; }
+
+    /* Scanner card */
+    .scanner-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .video-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      background: #000;
+      overflow: hidden;
+    }
+
+    video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .cam-placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px;
+      background: #0a0a0a;
+    }
+    .cam-placeholder svg { opacity: 0.2; }
+    .cam-placeholder p { font-size: 13px; color: var(--text3); font-family: var(--mono); }
+
+    /* Corner markers */
+    .corners {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      display: none;
+    }
+    .corners.active { display: block; }
+    .corner {
+      position: absolute;
+      width: 44px; height: 44px;
+      border-color: var(--green);
+      border-style: solid;
+    }
+    .corner.tl { top: 20%; left: 20%; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+    .corner.tr { top: 20%; right: 20%; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+    .corner.bl { bottom: 20%; left: 20%; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+    .corner.br { bottom: 20%; right: 20%; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+    /* Scan line animation */
+    .scanline {
+      position: absolute;
+      left: 20%; right: 20%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      top: 20%;
+      animation: scan 2s ease-in-out infinite;
+      display: none;
+      box-shadow: 0 0 8px var(--green);
+    }
+    .scanline.active { display: block; }
+    @keyframes scan {
+      0% { top: 20%; opacity: 1; }
+      50% { top: 78%; opacity: 0.8; }
+      100% { top: 20%; opacity: 1; }
+    }
+
+    /* Flash on detect */
+    .flash {
+      position: absolute; inset: 0;
+      background: var(--green);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.05s;
+    }
+    .flash.go { opacity: 0.15; }
+
+    /* Status bar */
+    .status-bar {
+      padding: 10px 14px;
+      display: flex; align-items: center; gap: 8px;
+      border-top: 1px solid var(--border);
+      min-height: 42px;
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text3);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.5s infinite; }
+    .status-dot.ok { background: var(--green); }
+    .status-dot.err { background: var(--red); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .status-text {
+      font-size: 13px;
+      color: var(--text2);
+      font-family: var(--mono);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status-text.ok { color: var(--green); }
+    .status-text.err { color: var(--red); }
+
+    /* Controls */
+    .controls {
+      display: flex; gap: 10px;
+      padding: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    button {
+      flex: 1;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    button:active { transform: scale(0.97); }
+
+    .btn-start {
+      background: var(--green);
+      border-color: var(--green);
+      color: #000;
+    }
+    .btn-start:hover { background: #00c962; }
+    .btn-start:disabled { background: var(--surface2); border-color: var(--border); color: var(--text3); cursor: not-allowed; transform: none; }
+
+    .btn-stop {
+      background: transparent;
+      color: var(--orange);
+      border-color: rgba(255,107,53,0.3);
+    }
+    .btn-stop:hover { background: var(--orange-dim); }
+
+    /* Stats */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+    .stat-label { font-size: 11px; color: var(--text3); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .stat-val { font-size: 26px; font-weight: 600; color: var(--text); letter-spacing: -1px; }
+
+    /* Log */
+    .log-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .log-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-head-title { font-size: 14px; font-weight: 500; }
+
+    .btn-export {
+      flex: none;
+      font-size: 12px;
+      padding: 5px 12px;
+      color: var(--text2);
+      background: var(--surface2);
+      border-color: var(--border);
+    }
+    .btn-export:hover { color: var(--text); border-color: var(--border2); }
+
+    .btn-clear {
+      flex: none;
+      font-size: 12px;
+      padding: 5px 12px;
+      color: var(--text3);
+      background: transparent;
+      border-color: var(--border);
+    }
+    .btn-clear:hover { color: var(--red); border-color: rgba(255,68,68,0.3); }
+
+    .log-list {
+      max-height: 360px;
+      overflow-y: auto;
+    }
+    .log-list::-webkit-scrollbar { width: 4px; }
+    .log-list::-webkit-scrollbar-track { background: transparent; }
+    .log-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .log-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      animation: fadeIn 0.25s ease;
+    }
+    .log-item:last-child { border-bottom: none; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+    .log-n { font-size: 11px; color: var(--text3); font-family: var(--mono); padding-top: 2px; min-width: 28px; text-align: right; }
+    .log-body { flex: 1; min-width: 0; }
+    .log-val {
+      font-size: 13px;
+      font-family: var(--mono);
+      color: var(--text);
+      word-break: break-all;
+      margin-bottom: 3px;
+    }
+    .log-meta { font-size: 11px; color: var(--text3); display: flex; gap: 8px; flex-wrap: wrap; }
+    .badge-dup {
+      font-size: 10px;
+      background: var(--orange-dim);
+      color: var(--orange);
+      border: 1px solid rgba(255,107,53,0.2);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    .empty {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--text3);
+      font-size: 13px;
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="square">
+        <rect x="3" y="3" width="6" height="6"/><rect x="15" y="3" width="6" height="6"/>
+        <rect x="3" y="15" width="6" height="6"/><rect x="15" y="15" width="3" height="3"/>
+        <line x1="15" y1="21" x2="21" y2="21"/><line x1="21" y1="15" x2="21" y2="21"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Lector QR</h1>
+      <div class="tagline">Registro automático con fecha y hora</div>
+    </div>
+  </header>
+
+  <div class="scanner-card">
+    <div class="video-wrap">
+      <div class="cam-placeholder" id="placeholder">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <p>cámara inactiva</p>
+      </div>
+      <video id="video" autoplay playsinline muted style="display:none"></video>
+      <div class="corners" id="corners">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+      <div class="scanline" id="scanline"></div>
+      <div class="flash" id="flash"></div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-dot" id="sDot"></div>
+      <div class="status-text" id="sText">Presiona Iniciar para comenzar</div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-start" id="btnStart">▶ Iniciar cámara</button>
+      <button class="btn-stop" id="btnStop" style="display:none">■ Detener</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Total</div><div class="stat-val" id="cTotal">0</div></div>
+    <div class="stat"><div class="stat-label">Únicos</div><div class="stat-val" id="cUnique">0</div></div>
+    <div class="stat"><div class="stat-label">Hoy</div><div class="stat-val" id="cToday">0</div></div>
+  </div>
+
+  <div class="log-card">
+    <div class="log-head">
+      <span class="log-head-title">Registro</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn-clear" id="btnClear">Limpiar</button>
+        <button class="btn-export" id="btnExport">↓ Exportar CSV</button>
+      </div>
+    </div>
+    <div class="log-list" id="logList">
+      <div class="empty">— sin registros aún —</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+  const STORAGE_KEY = 'qr_registro_v2';
+  let records = [];
+  let stream = null;
+  let scanning = false;
+  let lastCode = '';
+  let lastCodeTime = 0;
+
+  const video    = document.getElementById('video');
+  const placeholder = document.getElementById('placeholder');
+  const btnStart = document.getElementById('btnStart');
+  const btnStop  = document.getElementById('btnStop');
+  const sDot     = document.getElementById('sDot');
+  const sText    = document.getElementById('sText');
+  const logList  = document.getElementById('logList');
+  const corners  = document.getElementById('corners');
+  const scanline = document.getElementById('scanline');
+  const flash    = document.getElementById('flash');
+  const btnExport= document.getElementById('btnExport');
+  const btnClear = document.getElementById('btnClear');
+  const cTotal   = document.getElementById('cTotal');
+  const cUnique  = document.getElementById('cUnique');
+  const cToday   = document.getElementById('cToday');
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  /* ---------- Storage ---------- */
+  function load() {
+    try { records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { records = []; }
+  }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch {}
+  }
+
+  /* ---------- Helpers ---------- */
+  function isToday(ts) {
+    const d = new Date(ts), n = new Date();
+    return d.getFullYear()===n.getFullYear() && d.getMonth()===n.getMonth() && d.getDate()===n.getDate();
+  }
+
+  function fmtDate(ts) {
+    return new Date(ts).toLocaleString('es-CO', {
+      day:'2-digit', month:'2-digit', year:'numeric',
+      hour:'2-digit', minute:'2-digit', second:'2-digit'
+    });
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ---------- Render ---------- */
+  function render() {
+    const unique = new Set(records.map(r=>r.value)).size;
+    const today  = records.filter(r=>isToday(r.ts)).length;
+    cTotal.textContent  = records.length;
+    cUnique.textContent = unique;
+    cToday.textContent  = today;
+
+    if (!records.length) {
+      logList.innerHTML = '<div class="empty">— sin registros aún —</div>';
+      return;
+    }
+
+    const countMap = {};
+    records.forEach(r => { countMap[r.value] = (countMap[r.value]||0)+1; });
+
+    logList.innerHTML = [...records].reverse().map((r,i) => {
+      const n = records.length - i;
+      const dup = countMap[r.value] > 1;
+      return `<div class="log-item">
+        <span class="log-n">#${n}</span>
+        <div class="log-body">
+          <div class="log-val">${esc(r.value)}</div>
+          <div class="log-meta">
+            <span>${fmtDate(r.ts)}</span>
+            ${dup ? '<span class="badge-dup">repetido</span>' : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  /* ---------- Add record ---------- */
+  function addRecord(value) {
+    const now = Date.now();
+    if (value === lastCode && (now - lastCodeTime) < 3000) return;
+    lastCode = value;
+    lastCodeTime = now;
+
+    records.push({ value, ts: now });
+    save();
+    render();
+
+    // Flash feedback
+    flash.classList.add('go');
+    setTimeout(() => flash.classList.remove('go'), 150);
+
+    // Status
+    setStatus('ok', '✓ ' + value.substring(0,55) + (value.length>55?'…':''));
+    setTimeout(() => { if (scanning) setStatus('on', 'escaneando…'); }, 2500);
+  }
+
+  /* ---------- Status ---------- */
+  function setStatus(type, msg) {
+    sDot.className  = 'status-dot ' + (type==='on'?'on': type==='ok'?'ok': type==='err'?'err':'');
+    sText.className = 'status-text ' + (type==='ok'?'ok': type==='err'?'err':'');
+    sText.textContent = msg;
+  }
+
+  /* ---------- Scan loop ---------- */
+  function tick() {
+    if (!scanning) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(img.data, img.width, img.height, { inversionAttempts:'dontInvert' });
+      if (code) addRecord(code.data);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  /* ---------- Controls ---------- */
+  btnStart.addEventListener('click', async () => {
+    btnStart.disabled = true;
+    setStatus('', 'solicitando cámara…');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width:{ideal:1280}, height:{ideal:1280} }
+      });
+      video.srcObject = stream;
+      await video.play();
+      placeholder.style.display = 'none';
+      video.style.display = 'block';
+      corners.classList.add('active');
+      scanline.classList.add('active');
+      scanning = true;
+      btnStart.style.display = 'none';
+      btnStop.style.display = '';
+      setStatus('on', 'escaneando…');
+      tick();
+    } catch (e) {
+      btnStart.disabled = false;
+      setStatus('err', 'Error: ' + e.message);
+    }
+  });
+
+  btnStop.addEventListener('click', () => {
+    scanning = false;
+    if (stream) { stream.getTracks().forEach(t=>t.stop()); stream = null; }
+    video.srcObject = null;
+    video.style.display = 'none';
+    placeholder.style.display = 'flex';
+    corners.classList.remove('active');
+    scanline.classList.remove('active');
+    btnStop.style.display = 'none';
+    btnStart.style.display = '';
+    btnStart.disabled = false;
+    setStatus('', 'Cámara detenida');
+  });
+
+  btnExport.addEventListener('click', () => {
+    if (!records.length) { alert('No hay registros para exportar.'); return; }
+    const rows = [['#','Valor QR','Fecha y hora']];
+    records.forEach((r,i) => rows.push([i+1, '"'+r.value.replace(/"/g,'""')+'"', fmtDate(r.ts)]));
+    const csv  = '\uFEFF' + rows.map(r=>r.join(',')).join('\r\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'registro_qr_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click(); URL.revokeObjectURL(url);
+  });
+
+  btnClear.addEventListener('click', () => {
+    if (!records.length) return;
+    if (!confirm('¿Borrar todos los registros? Esta acción no se puede deshacer.')) return;
+    records = []; save(); render();
+    setStatus('', 'Registros eliminados');
+  });
+
+  /* ---------- Init ---------- */
+  load();
+  render();
+</script>
+</body>
+</html>
