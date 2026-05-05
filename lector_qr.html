@@ -397,6 +397,42 @@
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+  // Google Sheets integration — configure after deploying Apps Script web app
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzXeMKsPjj1g3nR3CDGGnyjAHhzxowgUTnkPTjqynM3vb2nj6P6HzlS9flfqqc_lJsxIQ/exec';
+  const SHEETS_SECRET = 's3cr3t_123';
+
+  function sendToSheet(value, ts){
+    try {
+      const data = new URLSearchParams();
+      data.append('value', value);
+      data.append('ts', String(ts));
+      data.append('secret', SHEETS_SECRET);
+      data.append('device', navigator.userAgent);
+      fetch(SHEETS_URL, { method: 'POST', body: data })
+        .then(r => r.json())
+        .then(res => { if (!res.success) console.warn('Sheets error', res); })
+        .catch(err => console.warn('Sheets network error', err));
+    } catch (e) {
+      console.warn('sendToSheet error', e);
+    }
+  }
+
+  function downloadCsvFromSheets(){
+    const url = SHEETS_URL + '?action=csv&secret=' + encodeURIComponent(SHEETS_SECRET);
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error('Network response not ok'); return r.blob(); })
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'registros_qr_' + new Date().toISOString().slice(0,10) + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(e => console.error('CSV download error', e));
+  }
+
   /* ---------- Storage ---------- */
   function load() {
     try { records = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { records = []; }
@@ -464,6 +500,8 @@
     records.push({ value, ts: now });
     save();
     render();
+    // send to Google Sheets (best-effort, non-blocking)
+    try { sendToSheet(value, now); } catch (e) { console.warn('sendToSheet failed', e); }
 
     // Flash feedback
     flash.classList.add('go');
