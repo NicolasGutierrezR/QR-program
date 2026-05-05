@@ -369,8 +369,17 @@
 
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
+  // Fallback: si por alguna razón el CDN no carga en el móvil,
+  // intenta cargar desde un CDN alternativo dinámicamente.
+  if (typeof jsQR === 'undefined') {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js';
+    s.onload = () => console.info('jsQR cargado desde fallback');
+    s.onerror = () => console.error('No se pudo cargar jsQR desde los CDNs; añade copia local.');
+    document.head.appendChild(s);
+  }
   const STORAGE_KEY = 'qr_registro_v2';
   let records = [];
   let stream = null;
